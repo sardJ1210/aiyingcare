@@ -185,10 +185,11 @@ def run_report():
     tkn = tenant_token()
     rows = index_latest_per_meal(list_by_base_date(base, tkn))
     a, c = sum_for(MEAL_KIND, served, rows)
-    if MENTION_USERIDS:
-        cn = {"lunch":"午餐","dinner":"晚餐","breakfast_next":"早餐"}[MEAL_KIND]
-        send_text(f"{served} {cn} 汇总：成人 {a}，儿童 {c}，合计 {a+c}。", userids=MENTION_USERIDS)
-    send_md(md_report(served, MEAL_KIND, a, c))
+
+    # —— 关键改动：把 @userid 放进 Markdown，只发一条 —— #
+    mention_md = " ".join(f"<@{u}>" for u in MENTION_USERIDS) if MENTION_USERIDS else ""
+    md = (mention_md + "\n" if mention_md else "") + md_report(served, MEAL_KIND, a, c)
+    send_md(md)  # 只发这条 Markdown；不再发送文本消息
 
 if __name__ == "__main__":
     # 提醒：只需要企业微信 Webhook（和可选 FORM_URL）
