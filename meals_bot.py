@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-ÒÀÀµ: requests
-»·¾³±äÁ¿:
+ä¾èµ–: requests
+ç¯å¢ƒå˜é‡(Secrets æ³¨å…¥)ï¼š
   FEISHU_APP_ID / FEISHU_APP_SECRET
   BITABLE_APP_TOKEN / BITABLE_TABLE_ID
   WECHAT_WEBHOOK
   TIMEZONE=Asia/Shanghai
   MODE=remind|report
-  MEAL_KIND=lunch|dinner|breakfast_next   # report Ê±±ØÌî
-  DATE_SHIFT_DAYS=0|1                     # ÌáĞÑÎÄ°¸ÓÃ£»report »á°´²Í´Î×Ô¶¯»ØÍÆµ½»ù×¼ÈÕ
-  FORM_URL=...                            # ÌáĞÑÀï·Å±íµ¥Á´½Ó£¨½Å±¾»á×Ô¶¯Æ´½Ó½ñÌì£©
-  DEADLINE_HHMM=09:30/15:00               # ÌáĞÑÀïÕ¹Ê¾
-  MENTION_MOBILES=13800000000,13900000000 # ¿ÉÑ¡£¬@ ÊÖ»úºÅ
-  LOCK_DATE=0/1                           # ¿ÉÑ¡£º1=°Ñ¡°ÓÃ²ÍÈÕÆÚ¡±Òş²Ø/Ëø¶¨
+  MEAL_KIND=lunch|dinner|breakfast_next   # report æ—¶å¿…å¡«
+  DATE_SHIFT_DAYS=0|1                     # æé†’æ–‡æ¡ˆç”¨ï¼›report ä¼šæŒ‰é¤æ¬¡è‡ªåŠ¨å›æ¨åˆ°åŸºå‡†æ—¥
+  FORM_URL=...                            # æé†’é‡Œæ”¾è¡¨å•é“¾æ¥ï¼ˆè„šæœ¬ä¼šè‡ªåŠ¨æ‹¼æ¥ä»Šå¤©ï¼‰
+  DEADLINE_HHMM=09:30/15:00               # æé†’é‡Œå±•ç¤º
+  MENTION_USERIDS=mr.Yu,zhangsan          # åªç”¨ userID æ–¹å¼ @ï¼ˆå¤šä¸ªè‹±æ–‡é€—å·åˆ†éš”ï¼‰
+  LOCK_DATE=0/1                           # 1=æŠŠâ€œç”¨é¤æ—¥æœŸâ€éšè—/é”å®š
 """
 import os, requests, datetime
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
@@ -31,12 +31,12 @@ MEAL_KIND = os.getenv("MEAL_KIND", "lunch")  # lunch/dinner/breakfast_next
 SHIFT = int(os.getenv("DATE_SHIFT_DAYS", "0"))
 FORM_URL = os.getenv("FORM_URL", "")
 DEADLINE = os.getenv("DEADLINE_HHMM", "")
-MENTION = [s.strip() for s in os.getenv("MENTION_MOBILES","").split(",") if s.strip()]
+MENTION_USERIDS = [s.strip() for s in os.getenv("MENTION_USERIDS","").split(",") if s.strip()]
 LOCK_DATE = os.getenv("LOCK_DATE","0") == "1"
 
-# ×Ö¶Î
-F_DATE, F_NAME, F_MEALS = "ÓÃ²ÍÈÕÆÚ", "ĞÕÃû", "²Í±ğ"
-F_ADULT, F_CHILD = "³ÉÈË·İÊı", "¶ùÍ¯·İÊı"
+# å­—æ®µ
+F_DATE, F_NAME, F_MEALS = "ç”¨é¤æ—¥æœŸ", "å§“å", "é¤åˆ«"
+F_ADULT, F_CHILD = "æˆäººä»½æ•°", "å„¿ç«¥ä»½æ•°"
 ADULT_MAX, CHILD_MAX = 2, 2
 
 def dstr(days=0):
@@ -72,31 +72,31 @@ def _ts(it):
     return int(it.get("last_modified_time") or it.get("updated_time") or it.get("created_time") or 0)
 
 def _clip_optional(v, hi):
-    """¿Õ/ÎŞĞ§/¸ºÊı¶¼µ± 0£¬ÇÒ²»³¬¹ıÉÏÏŞ hi¡£"""
+    """ç©º/æ— æ•ˆ/è´Ÿæ•°éƒ½å½“ 0ï¼Œä¸”ä¸è¶…è¿‡ä¸Šé™ hiã€‚"""
     try: x = int(v)
     except: x = 0
     if x < 0: x = 0
     return hi if x > hi else x
 
 def normalize_meals(v):
-    """¶àÑ¡Í³Ò»³É {'lunch','dinner','breakfast_next'}"""
+    """å¤šé€‰ç»Ÿä¸€æˆ {'lunch','dinner','breakfast_next'}"""
     if isinstance(v, list):
         names = set(v)
     elif isinstance(v, str):
-        names = set([x.strip() for x in v.replace("£¬", ",").split(",") if x.strip()])
+        names = set([x.strip() for x in v.replace("ï¼Œ", ",").split(",") if x.strip()])
     else:
         names = set()
     out = set()
     for n in names:
-        if n in ("Îç²Í","lunch"): out.add("lunch")
-        elif n in ("Íí²Í","dinner"): out.add("dinner")
-        elif n in ("´ÎÈÕÔç²Í","Ôç²Í","breakfast","breakfast_next"): out.add("breakfast_next")
+        if n in ("åˆé¤","lunch"): out.add("lunch")
+        elif n in ("æ™šé¤","dinner"): out.add("dinner")
+        elif n in ("æ¬¡æ—¥æ—©é¤","æ—©é¤","breakfast","breakfast_next"): out.add("breakfast_next")
     return out
 
 def index_latest_per_meal(items):
     """
-    Í¬Ò»ÈË+Í¬Ò»»ù×¼ÈÕ+Í¬Ò»²Í´Î È¡×îºóÒ»´Î£»¶àÑ¡²ğ³ÉÖğ²Í¼ÇÂ¼¡£
-    Êä³ö£º{base, name, meal, adult, child, _ts}
+    åŒä¸€äºº+åŒä¸€åŸºå‡†æ—¥+åŒä¸€é¤æ¬¡ å–æœ€åä¸€æ¬¡ï¼›å¤šé€‰æ‹†æˆé€é¤è®°å½•ã€‚
+    è¾“å‡ºï¼š{base, name, meal, adult, child, _ts}
     """
     latest = {}
     for it in items:
@@ -107,7 +107,7 @@ def index_latest_per_meal(items):
         ts = _ts(it)
         meals = normalize_meals(f.get(F_MEALS))
         adult = _clip_optional(f.get(F_ADULT, 0), ADULT_MAX)
-        child = _clip_optional(f.get(F_CHILD, 0), CHILD_MAX)  # ¶ùÍ¯¿É²»Ìî¡ú°´0¼Æ
+        child = _clip_optional(f.get(F_CHILD, 0), CHILD_MAX)  # å„¿ç«¥å¯ä¸å¡«â†’æŒ‰0è®¡
         for mk in meals:
             key = (base, name, mk)
             if key not in latest or ts >= latest[key]["_ts"]:
@@ -116,7 +116,7 @@ def index_latest_per_meal(items):
     return list(latest.values())
 
 def sum_for(meal_kind, served_date, rows):
-    """Îç/Íí²Í¾Í²ÍÈÕ=»ù×¼ÈÕ£»´ÎÈÕÔç²Í¾Í²ÍÈÕ=»ù×¼ÈÕ+1¡£"""
+    """åˆ/æ™šé¤å°±é¤æ—¥=åŸºå‡†æ—¥ï¼›æ¬¡æ—¥æ—©é¤å°±é¤æ—¥=åŸºå‡†æ—¥+1ã€‚"""
     a = c = 0
     for r in rows:
         if r["meal"] != meal_kind: 
@@ -137,56 +137,66 @@ def send_wecom(payload):
     data = r.json()
     if data.get("errcode",0)!=0: raise RuntimeError(data)
 
-def send_text(t, mobiles=None):
-    send_wecom({"msgtype":"text","text":{"content":t,"mentioned_mobile_list":mobiles or []}})
+def send_text(t, userids=None):
+    payload = {"msgtype":"text","text":{"content":t}}
+    if userids:
+        payload["text"]["mentioned_list"] = userids  # ä¼ä¸šå¾®ä¿¡ userID åˆ—è¡¨
+    send_wecom(payload)
 
 def send_md(md):
     send_wecom({"msgtype":"markdown","markdown":{"content":md}})
 
 def md_report(date_str, meal_kind, a, c):
-    cn = {"lunch":"Îç²Í","dinner":"Íí²Í","breakfast_next":"Ôç²Í"}[meal_kind]
+    cn = {"lunch":"åˆé¤","dinner":"æ™šé¤","breakfast_next":"æ—©é¤"}[meal_kind]
     return "\n".join([
-        f"**{date_str} {cn} ÓÃ²Í»ã×Ü**",
-        f"> ³ÉÈË£º**{a}** ·İ¡¡¶ùÍ¯£º**{c}** ·İ¡¡ºÏ¼Æ£º**{a+c}** ·İ",
-        "\n£¨×Ô¶¯·¢ËÍ£ü³ÉÈË¡Ü2¡¢¶ùÍ¯¡Ü2¡²¶ùÍ¯¿É²»Ìî¡³£ü²Í±ğ¶àÑ¡£»Ã¿²Í¸÷×ÔÒÔ×îºóÒ»´ÎÎª×¼£©"
+        f"**{date_str} {cn} ç”¨é¤æ±‡æ€»**",
+        f"> æˆäººï¼š**{a}** ä»½ã€€å„¿ç«¥ï¼š**{c}** ä»½ã€€åˆè®¡ï¼š**{a+c}** ä»½",
+        "\nï¼ˆè‡ªåŠ¨å‘é€ï½œæˆäººâ‰¤2ã€å„¿ç«¥â‰¤2ã€”å„¿ç«¥å¯ä¸å¡«ã€•ï½œé¤åˆ«å¤šé€‰ï¼›æ¯é¤å„è‡ªä»¥æœ€åä¸€æ¬¡ä¸ºå‡†ï¼‰"
     ])
 
-# --- ÔÚÌáĞÑÁ´½ÓÀï×Ô¶¯Ô¤Ìî¡°ÓÃ²ÍÈÕÆÚ=½ñÌì¡±£¨¿ÉÑ¡Òş²Ø¸Ã×Ö¶Î£© ---
+# --- åœ¨æé†’é“¾æ¥é‡Œè‡ªåŠ¨é¢„å¡«â€œç”¨é¤æ—¥æœŸ=ä»Šå¤©â€ï¼ˆå¯é€‰éšè—è¯¥å­—æ®µï¼‰ ---
 def add_prefill_date(url: str, date_str: str, lock: bool=False) -> str:
     if not url:
         return url
     parts = urlsplit(url)
     params = dict(parse_qsl(parts.query, keep_blank_values=True))
-    params["prefill_ÓÃ²ÍÈÕÆÚ"] = date_str
+    params["prefill_ç”¨é¤æ—¥æœŸ"] = date_str
     if lock:
-        params["hide_ÓÃ²ÍÈÕÆÚ"] = "1"
+        params["hide_ç”¨é¤æ—¥æœŸ"] = "1"
     new_query = urlencode(params, doseq=True)
     return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
 
 def run_remind():
-    d = dstr(SHIFT)  # ½ñÌì£¨»òÄãÉè¶¨µÄÆ«ÒÆ£©
-    tip = f"£¨½ØÖ¹ {DEADLINE}£©" if DEADLINE else ""
+    d = dstr(SHIFT)  # ä»Šå¤©ï¼ˆæˆ–ä½ è®¾å®šçš„åç§»ï¼‰
+    tip = f"ï¼ˆæˆªæ­¢ {DEADLINE}ï¼‰" if DEADLINE else ""
     link = add_prefill_date(FORM_URL, d, lock=LOCK_DATE) if FORM_URL else ""
     msg = "\n".join([
-        f"{d} ÓÃ²ÍµÇ¼Ç¿ªÊ¼ {tip}",
-        "²Í±ğ**¿É¶àÑ¡**£ºÎç²Í/Íí²Í/´ÎÈÕÔç²Í£»³ÉÈË/¶ùÍ¯·İÊı»áÓ¦ÓÃµ½Ã¿¸ö¹´Ñ¡µÄ²Í´Î£¨**¶ùÍ¯¿É²»Ìî**£©¡£",
-        f"±íµ¥Èë¿Ú£º{link}" if link else "±íµ¥Èë¿Ú¼ûÈº¹«¸æ¡£",
-        "¹æÔò£º³ÉÈË¡Ü2¡¢¶ùÍ¯¡Ü2£»¿É·´¸´Ìá½»£¬**¸÷²Í»¥²»¸²¸Ç£¬°´¸÷×Ô×îºóÒ»´ÎÎª×¼**¡£"
+        f"{d} ç”¨é¤ç™»è®°å¼€å§‹ {tip}",
+        "é¤åˆ«**å¯å¤šé€‰**ï¼šåˆé¤/æ™šé¤/æ¬¡æ—¥æ—©é¤ï¼›æˆäºº/å„¿ç«¥ä»½æ•°ä¼šåº”ç”¨åˆ°æ¯ä¸ªå‹¾é€‰çš„é¤æ¬¡ï¼ˆ**å„¿ç«¥å¯ä¸å¡«**ï¼‰ã€‚",
+        f"è¡¨å•å…¥å£ï¼š{link}" if link else "è¡¨å•å…¥å£è§ç¾¤å…¬å‘Šã€‚",
+        "è§„åˆ™ï¼šæˆäººâ‰¤2ã€å„¿ç«¥â‰¤2ï¼›å¯åå¤æäº¤ï¼Œ**å„é¤äº’ä¸è¦†ç›–ï¼ŒæŒ‰å„è‡ªæœ€åä¸€æ¬¡ä¸ºå‡†**ã€‚"
     ])
+    # è‹¥æƒ³åœ¨æé†’é‡Œä¹Ÿ @ å¨å¸ˆï¼Œå¯æ”¹ä¸ºï¼šsend_text(msg, userids=MENTION_USERIDS)
     send_text(msg)
 
 def run_report():
-    served = dstr(SHIFT)  # ¾Í²ÍÈÕ
+    served = dstr(SHIFT)  # å°±é¤æ—¥
     base = dstr(SHIFT - 1) if MEAL_KIND=="breakfast_next" else served
     tkn = tenant_token()
     rows = index_latest_per_meal(list_by_base_date(base, tkn))
     a, c = sum_for(MEAL_KIND, served, rows)
-    if MENTION:
-        cn = {"lunch":"Îç²Í","dinner":"Íí²Í","breakfast_next":"Ôç²Í"}[MEAL_KIND]
-        send_text(f"{served} {cn} »ã×Ü£º³ÉÈË {a}£¬¶ùÍ¯ {c}£¬ºÏ¼Æ {a+c}¡£", MENTION)
+    if MENTION_USERIDS:
+        cn = {"lunch":"åˆé¤","dinner":"æ™šé¤","breakfast_next":"æ—©é¤"}[MEAL_KIND]
+        send_text(f"{served} {cn} æ±‡æ€»ï¼šæˆäºº {a}ï¼Œå„¿ç«¥ {c}ï¼Œåˆè®¡ {a+c}ã€‚", userids=MENTION_USERIDS)
     send_md(md_report(served, MEAL_KIND, a, c))
 
 if __name__ == "__main__":
-    assert APP_ID and APP_SECRET and APP_TOKEN and TABLE_ID and WEBHOOK
-    if MODE=="remind": run_remind()
-    else: run_report()
+    # æé†’ï¼šåªéœ€è¦ä¼ä¸šå¾®ä¿¡ Webhookï¼ˆå’Œå¯é€‰ FORM_URLï¼‰
+    if MODE == "remind":
+        assert WEBHOOK, "WECHAT_WEBHOOK missing"
+        run_remind()
+    else:
+        # æ±‡æ€»ï¼šéœ€è¦é£ä¹¦å‡­è¯ & è¡¨ä¿¡æ¯
+        assert APP_ID and APP_SECRET and APP_TOKEN and TABLE_ID and WEBHOOK, \
+            "Missing Feishu credentials (FEISHU_APP_ID/SECRET, BITABLE_APP_TOKEN/TABLE_ID, WECHAT_WEBHOOK)"
+        run_report()
