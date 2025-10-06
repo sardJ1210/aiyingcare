@@ -172,9 +172,9 @@ def run_remind():
     link = add_prefill_date(FORM_URL, d, lock=LOCK_DATE) if FORM_URL else ""
     msg = "\n".join([
         f"{d} 用餐登记开始 {tip}",
-        "餐别**可多选**：午餐/晚餐/次日早餐；成人/儿童份数会应用到每个勾选的餐次（**儿童可不填**）。",
-        f"表单入口：{link}" if link else "表单入口见群公告。",
-        "规则：成人≤2、儿童≤2；可反复提交，**各餐互不覆盖，按各自最后一次为准**。"
+        "截止登记时间：午餐：09:30、晚餐/次日早餐：15:00；（可多选）",
+        f"员工餐订餐链接➡️：{link}" if link else "表单入口见群公告。",
+        "福利：可额外点选家人餐（堂食/外带均可）：成人≤2、儿童≤2 用餐杜绝浪费。"
     ])
     # 若想在提醒里也 @ 厨师，可改为：send_text(msg, userids=MENTION_USERIDS)
     send_text(msg)
