@@ -1,212 +1,145 @@
-name: meals-bot-scheduling
+name: meals-bot
 
 on:
   schedule:
-    # 北京时间 (Asia/Shanghai) 07:30 主触发 (UTC 23:30)
-    - cron: '30 23 * * *'
-    # 北京时间 07:32 备用触发 (UTC 23:32)
-    - cron: '32 23 * * *'
-    # 北京时间 09:30 主触发 (UTC 01:30)
-    - cron: '30 1 * * *'
-    # 北京时间 09:32 备用触发 (UTC 01:32)
-    - cron: '32 1 * * *'
-    # 北京时间 13:30 主触发 (UTC 05:30)
-    - cron: '30 5 * * *'
-    # 北京时间 13:32 备用触发 (UTC 05:32)
-    - cron: '32 5 * * *'
-    # 北京时间 15:00 主触发 (UTC 07:00)
-    - cron: '0 7 * * *'
-    # 北京时间 15:02 备用触发 (UTC 07:02)
-    - cron: '2 7 * * *'
+    - cron: "30 23 * * *" # 07:30 BJT 提醒(主)
+    - cron: "32 23 * * *" # 07:32 BJT 提醒(备)
+    - cron: "30 1 * * *"  # 09:30 BJT 午餐汇总(主)
+    - cron: "32 1 * * *"  # 09:32 BJT 午餐汇总(备)
+    - cron: "30 5 * * *"  # 13:30 BJT 提醒(主)
+    - cron: "32 5 * * *"  # 13:32 BJT 提醒(备)
+    - cron: "0 7 * * *"   # 15:00 BJT 晚餐/早餐汇总(主)
+    - cron: "2 7 * * *"   # 15:02 BJT 晚餐/早餐汇总(备)
   workflow_dispatch:
     inputs:
       task:
-        description: '任务类型 (remind_lunch, summary_lunch, remind_dinner_breakfast, summary_dinner, summary_breakfast)'
+        description: "手动运行: remind_lunch, report_lunch, remind_pm, report_dinner, report_breakfast"
         required: true
-        default: 'remind_lunch'
+        default: remind_lunch
+        type: choice
+        options: [remind_lunch, report_lunch, remind_pm, report_dinner, report_breakfast]
 
 jobs:
   remind_lunch:
-    name: Remind Lunch
+    name: Remind Lunch (07:30/07:32)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    if: |
+      (github.event_name == 'schedule' && (contains(github.event.schedule, '30 23') || contains(github.event.schedule, '32 23'))) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.task == 'remind_lunch')
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-      - name: Setup Python
-        uses: actions/setup-python@v3
-        with:
-          python-version: 3.x
-      - id: check_time
-        name: Check schedule or task (Remind Lunch)
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Install deps
+        run: pip install --no-cache-dir requests
+      - name: Run remind (lunch)
+        run: python meals_bot.py
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_TASK: ${{ github.event.inputs.task }}
-        run: |
-          TIME=$(TZ="Asia/Shanghai" date +'%H:%M')
-          echo "Event: $EVENT_NAME, Time: $TIME, Input Task: $INPUT_TASK"
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-              if [ "$INPUT_TASK" != "remind_lunch" ]; then
-                  echo "skip=true" >> $GITHUB_OUTPUT
-              else
-                  echo "skip=false" >> $GITHUB_OUTPUT
-              fi
-          else
-              if [ "$TIME" = "07:30" ] || [ "$TIME" = "07:32" ]; then
-                  echo "skip=false" >> $GITHUB_OUTPUT
-              else
-                  echo "skip=true" >> $GITHUB_OUTPUT
-              fi
-          fi
-      - name: Run Remind Lunch
-        if: steps.check_time.outputs.skip == 'false'
-        run: |
-          python meals_bot.py remind_lunch
+          WECHAT_WEBHOOK: ${{ secrets.WECHAT_WEBHOOK }}
+          TIMEZONE: Asia/Shanghai
+          MODE: remind
+          DATE_SHIFT_DAYS: "0"
+          FORM_URL: ${{ secrets.FORM_URL }}
+          DEADLINE_HHMM: "09:30"
+          LOCK_DATE: ${{ secrets.LOCK_DATE }}
 
-  summary_lunch:
-    name: Summary Lunch
+  report_lunch:
+    name: Report Lunch (09:30/09:32)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    if: |
+      (github.event_name == 'schedule' && (contains(github.event.schedule, '30 1') || contains(github.event.schedule, '32 1'))) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.task == 'report_lunch')
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-      - name: Setup Python
-        uses: actions/setup-python@v3
-        with:
-          python-version: 3.x
-      - id: check_time
-        name: Check schedule or task (Summary Lunch)
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Install deps
+        run: pip install --no-cache-dir requests
+      - name: Run report (lunch)
+        run: python meals_bot.py
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_TASK: ${{ github.event.inputs.task }}
-        run: |
-          TIME=$(TZ="Asia/Shanghai" date +'%H:%M')
-          echo "Event: $EVENT_NAME, Time: $TIME, Input Task: $INPUT_TASK"
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-              if [ "$INPUT_TASK" != "summary_lunch" ]; then
-                  echo "skip=true" >> $GITHUB_OUTPUT
-              else
-                  echo "skip=false" >> $GITHUB_OUTPUT
-              fi
-          else
-              if [ "$TIME" = "09:30" ] || [ "$TIME" = "09:32" ]; then
-                  echo "skip=false" >> $GITHUB_OUTPUT
-              else
-                  echo "skip=true" >> $GITHUB_OUTPUT
-              fi
-          fi
-      - name: Run Summary Lunch
-        if: steps.check_time.outputs.skip == 'false'
-        run: |
-          python meals_bot.py summary_lunch
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          BITABLE_APP_TOKEN: ${{ secrets.BITABLE_APP_TOKEN }}
+          BITABLE_TABLE_ID: ${{ secrets.BITABLE_TABLE_ID }}
+          WECHAT_WEBHOOK: ${{ secrets.WECHAT_WEBHOOK }}
+          TIMEZONE: Asia/Shanghai
+          MODE: report
+          MEAL_KIND: lunch
+          DATE_SHIFT_DAYS: "0"
+          MENTION_USERIDS: ${{ secrets.MENTION_USERIDS }}
 
-  remind_dinner_breakfast:
-    name: Remind Dinner/Breakfast
+  remind_pm:
+    name: Remind Dinner & Breakfast (13:30/13:32)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    if: |
+      (github.event_name == 'schedule' && (contains(github.event.schedule, '30 5') || contains(github.event.schedule, '32 5'))) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.task == 'remind_pm')
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-      - name: Setup Python
-        uses: actions/setup-python@v3
-        with:
-          python-version: 3.x
-      - id: check_time
-        name: Check schedule or task (Remind Dinner/Breakfast)
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Install deps
+        run: pip install --no-cache-dir requests
+      - name: Run remind (dinner & breakfast_next)
+        run: python meals_bot.py
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_TASK: ${{ github.event.inputs.task }}
-        run: |
-          TIME=$(TZ="Asia/Shanghai" date +'%H:%M')
-          echo "Event: $EVENT_NAME, Time: $TIME, Input Task: $INPUT_TASK"
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-              if [ "$INPUT_TASK" != "remind_dinner_breakfast" ]; then
-                  echo "skip=true" >> $GITHUB_OUTPUT
-              else
-                  echo "skip=false" >> $GITHUB_OUTPUT
-              fi
-          else
-              if [ "$TIME" = "13:30" ] || [ "$TIME" = "13:32" ]; then
-                  echo "skip=false" >> $GITHUB_OUTPUT
-              else
-                  echo "skip=true" >> $GITHUB_OUTPUT
-              fi
-          fi
-      - name: Run Remind Dinner/Breakfast
-        if: steps.check_time.outputs.skip == 'false'
-        run: |
-          python meals_bot.py remind_dinner_breakfast
+          WECHAT_WEBHOOK: ${{ secrets.WECHAT_WEBHOOK }}
+          TIMEZONE: Asia/Shanghai
+          MODE: remind
+          DATE_SHIFT_DAYS: "0"
+          FORM_URL: ${{ secrets.FORM_URL }}
+          DEADLINE_HHMM: "15:00"
+          LOCK_DATE: ${{ secrets.LOCK_DATE }}
 
-  summary_dinner:
-    name: Summary Dinner
+  report_dinner:
+    name: Report Dinner (15:00/15:02)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    if: |
+      (github.event_name == 'schedule' && (contains(github.event.schedule, '0 7') || contains(github.event.schedule, '2 7'))) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.task == 'report_dinner')
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-      - name: Setup Python
-        uses: actions/setup-python@v3
-        with:
-          python-version: 3.x
-      - id: check_time
-        name: Check schedule or task (Summary Dinner)
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Install deps
+        run: pip install --no-cache-dir requests
+      - name: Run report (dinner)
+        run: python meals_bot.py
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_TASK: ${{ github.event.inputs.task }}
-        run: |
-          TIME=$(TZ="Asia/Shanghai" date +'%H:%M')
-          echo "Event: $EVENT_NAME, Time: $TIME, Input Task: $INPUT_TASK"
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-              if [ "$INPUT_TASK" != "summary_dinner" ]; then
-                  echo "skip=true" >> $GITHUB_OUTPUT
-              else
-                  echo "skip=false" >> $GITHUB_OUTPUT
-              fi
-          else
-              if [ "$TIME" = "15:00" ] || [ "$TIME" = "15:02" ]; then
-                  echo "skip=false" >> $GITHUB_OUTPUT
-              else
-                  echo "skip=true" >> $GITHUB_OUTPUT
-              fi
-          fi
-      - name: Run Summary Dinner
-        if: steps.check_time.outputs.skip == 'false'
-        run: |
-          python meals_bot.py summary_dinner
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          BITABLE_APP_TOKEN: ${{ secrets.BITABLE_APP_TOKEN }}
+          BITABLE_TABLE_ID: ${{ secrets.BITABLE_TABLE_ID }}
+          WECHAT_WEBHOOK: ${{ secrets.WECHAT_WEBHOOK }}
+          TIMEZONE: Asia/Shanghai
+          MODE: report
+          MEAL_KIND: dinner
+          DATE_SHIFT_DAYS: "0"
+          MENTION_USERIDS: ${{ secrets.MENTION_USERIDS }}
 
-  summary_breakfast:
-    name: Summary Breakfast
+  report_breakfast:
+    name: Report Breakfast Tomorrow (15:00/15:02)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    if: |
+      (github.event_name == 'schedule' && (contains(github.event.schedule, '0 7') || contains(github.event.schedule, '2 7'))) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.task == 'report_breakfast')
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-      - name: Setup Python
-        uses: actions/setup-python@v3
-        with:
-          python-version: 3.x
-      - id: check_time
-        name: Check schedule or task (Summary Breakfast)
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Install deps
+        run: pip install --no-cache-dir requests
+      - name: Run report (breakfast_next)
+        run: python meals_bot.py
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_TASK: ${{ github.event.inputs.task }}
-        run: |
-          TIME=$(TZ="Asia/Shanghai" date +'%H:%M')
-          echo "Event: $EVENT_NAME, Time: $TIME, Input Task: $INPUT_TASK"
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-              if [ "$INPUT_TASK" != "summary_breakfast" ]; then
-                  echo "skip=true" >> $GITHUB_OUTPUT
-              else
-                  echo "skip=false" >> $GITHUB_OUTPUT
-              fi
-          else
-              if [ "$TIME" = "15:00" ] || [ "$TIME" = "15:02" ]; then
-                  echo "skip=false" >> $GITHUB_OUTPUT
-              else
-                  echo "skip=true" >> $GITHUB_OUTPUT
-              fi
-          fi
-      - name: Run Summary Breakfast
-        if: steps.check_time.outputs.skip == 'false'
-        run: |
-          python meals_bot.py summary_breakfast
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          BITABLE_APP_TOKEN: ${{ secrets.BITABLE_APP_TOKEN }}
+          BITABLE_TABLE_ID: ${{ secrets.BITABLE_TABLE_ID }}
+          WECHAT_WEBHOOK: ${{ secrets.WECHAT_WEBHOOK }}
+          TIMEZONE: Asia/Shanghai
+          MODE: report
+          MEAL_KIND: breakfast_next
+          DATE_SHIFT_DAYS: "1"
+          MENTION_USERIDS: ${{ secrets.MENTION_USERIDS }}
