@@ -42,6 +42,29 @@ ADULT_MAX, CHILD_MAX = 2, 2
 def dstr(days=0):
     return (datetime.datetime.now(TZ) + datetime.timedelta(days=days)).date().strftime("%Y-%m-%d")
 
+# ---- 统一把各种日期值规范到 YYYY-MM-DD（支持时间戳/含时分秒/斜杠）----
+def _date_to_yyyymmdd(v):
+    if v is None:
+        return None
+    # 数字时间戳（ms 或 s）
+    if isinstance(v, (int, float)):
+        ts = float(v)
+        if ts > 1e12:  # 毫秒
+            ts /= 1000.0
+        try:
+            return datetime.datetime.fromtimestamp(ts, TZ).date().isoformat()
+        except Exception:
+            return None
+    # 字符串
+    if isinstance(v, str):
+        s = v.strip()
+        if len(s) >= 10:
+            if s[4] == '-' and s[7] == '-':   # 2025-10-07 或 2025-10-07 00:00:00
+                return s[:10]
+            if s[4] == '/' and s[7] == '/':   # 2025/10/07
+                return s.replace('/', '-')[:10]
+    return None
+
 def tenant_token():
     url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
     r = requests.post(url, json={"app_id": APP_ID, "app_secret": APP_SECRET}, timeout=10)
@@ -51,46 +74,65 @@ def tenant_token():
         raise RuntimeError(data)
     return data["tenant_access_token"]
 
+# ---- 不再依赖服务端 filter；分页拉取后在本地按“用餐日期==base_date”过滤 ----
 def list_by_base_date(base_date, tkn):
-    base = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{TABLE_ID}/records"
+    api = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{APP_TOKEN}/tables/{TABLE_ID}/records"
     headers = {"Authorization": f"Bearer {tkn}"}
-    filt = f'CurrentValue.[{F_DATE}] = "{base_date}"'
     items, page_token = [], None
     while True:
-        params = {"page_size": 500, "filter": filt}
-        if page_token: params["page_token"] = page_token
-        resp = requests.get(base, headers=headers, params=params, timeout=15)
+        params = {"page_size": 500}
+        if page_token:
+            params["page_token"] = page_token
+        resp = requests.get(api, headers=headers, params=params, timeout=15)
         resp.raise_for_status()
         data = resp.json()
-        if data.get("code") != 0: raise RuntimeError(data)
-        items += data.get("data",{}).get("items",[])
-        page_token = data.get("data",{}).get("page_token")
-        if not data.get("data",{}).get("has_more"): break
+        if data.get("code") != 0:
+            raise RuntimeError(data)
+
+        for it in data.get("data", {}).get("items", []):
+            f = it.get("fields", {})
+            base_norm = _date_to_yyyymmdd(f.get(F_DATE))
+            if base_norm == base_date:
+                items.append(it)
+
+        page_token = data.get("data", {}).get("page_token")
+        if not data.get("data", {}).get("has_more"):
+            break
     return items
 
-def _ts(it): 
+def _ts(it):
     return int(it.get("last_modified_time") or it.get("updated_time") or it.get("created_time") or 0)
 
 def _clip_optional(v, hi):
-    """空/无效/负数都当 0，且不超过上限 hi。"""
-    try: x = int(v)
-    except: x = 0
+    """空/无效/负数都当 0，且不超过上限 hi；兼容 '1' / 1.0 / None。"""
+    try:
+        x = int(v)
+    except Exception:
+        try:
+            x = int(float(v))
+        except Exception:
+            x = 0
     if x < 0: x = 0
     return hi if x > hi else x
 
 def normalize_meals(v):
-    """多选统一成 {'lunch','dinner','breakfast_next'}"""
+    """多选统一成 {'lunch','dinner','breakfast_next'}；兼容对象数组 [{'text':'午餐'}]"""
+    names = set()
     if isinstance(v, list):
-        names = set(v)
+        for x in v:
+            if isinstance(x, str):
+                names.add(x)
+            elif isinstance(x, dict):
+                t = x.get("text") or x.get("name") or x.get("value") or x.get("label")
+                if t: names.add(str(t))
     elif isinstance(v, str):
         names = set([x.strip() for x in v.replace("，", ",").split(",") if x.strip()])
-    else:
-        names = set()
+
     out = set()
     for n in names:
-        if n in ("午餐","lunch"): out.add("lunch")
-        elif n in ("晚餐","dinner"): out.add("dinner")
-        elif n in ("次日早餐","早餐","breakfast","breakfast_next"): out.add("breakfast_next")
+        if n in ("午餐", "lunch"): out.add("lunch")
+        elif n in ("晚餐", "dinner"): out.add("dinner")
+        elif n in ("次日早餐", "早餐", "breakfast", "breakfast_next"): out.add("breakfast_next")
     return out
 
 def index_latest_per_meal(items):
@@ -101,17 +143,18 @@ def index_latest_per_meal(items):
     latest = {}
     for it in items:
         f = it.get("fields", {})
-        base = f.get(F_DATE)
+        base_norm = _date_to_yyyymmdd(f.get(F_DATE))
         name = (f.get(F_NAME) or "").strip()
-        if not (base and name): continue
+        if not (base_norm and name): 
+            continue
         ts = _ts(it)
         meals = normalize_meals(f.get(F_MEALS))
         adult = _clip_optional(f.get(F_ADULT, 0), ADULT_MAX)
         child = _clip_optional(f.get(F_CHILD, 0), CHILD_MAX)  # 儿童可不填→按0计
         for mk in meals:
-            key = (base, name, mk)
+            key = (base_norm, name, mk)
             if key not in latest or ts >= latest[key]["_ts"]:
-                latest[key] = {"base": base, "name": name, "meal": mk,
+                latest[key] = {"base": base_norm, "name": name, "meal": mk,
                                "adult": adult, "child": child, "_ts": ts}
     return list(latest.values())
 
@@ -119,11 +162,12 @@ def sum_for(meal_kind, served_date, rows):
     """午/晚餐就餐日=基准日；次日早餐就餐日=基准日+1。"""
     a = c = 0
     for r in rows:
-        if r["meal"] != meal_kind: 
+        if r["meal"] != meal_kind:
             continue
-        base = r["base"]
+        base = r["base"]  # 已经是 YYYY-MM-DD
         if meal_kind == "breakfast_next":
-            if (datetime.date.fromisoformat(base) + datetime.timedelta(days=1)).strftime("%Y-%m-%d") != served_date:
+            # 基准日+1 == 就餐日
+            if (datetime.date.fromisoformat(base) + datetime.timedelta(days=1)).isoformat() != served_date:
                 continue
         else:
             if base != served_date:
@@ -186,10 +230,10 @@ def run_report():
     rows = index_latest_per_meal(list_by_base_date(base, tkn))
     a, c = sum_for(MEAL_KIND, served, rows)
 
-    # —— 关键改动：把 @userid 放进 Markdown，只发一条 —— #
+    # —— 把 @userid 放进 Markdown，只发一条 —— #
     mention_md = " ".join(f"<@{u}>" for u in MENTION_USERIDS) if MENTION_USERIDS else ""
     md = (mention_md + "\n" if mention_md else "") + md_report(served, MEAL_KIND, a, c)
-    send_md(md)  # 只发这条 Markdown；不再发送文本消息
+    send_md(md)
 
 if __name__ == "__main__":
     # 提醒：只需要企业微信 Webhook（和可选 FORM_URL）
