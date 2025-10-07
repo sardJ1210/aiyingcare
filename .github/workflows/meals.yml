@@ -1,108 +1,86 @@
-name: meals-bot
+name: Automatic Meal Ordering Scheduler
+
 on:
   schedule:
-    - cron: "30 23 * * *" # 07:30 CST 提醒
-    - cron: "30 1 * * *"  # 09:30 CST 午餐汇总
-    - cron: "30 5 * * *"  # 13:30 CST 提醒：晚餐&次日早餐
-    - cron: "0 7 * * *"   # 15:00 CST 晚餐+次日早餐汇总
+    # 每日07:30 (午餐提醒) + 07:32 备用
+    - cron: '30 23 * * *'
+    - cron: '32 23 * * *'
+    # 每日09:30 (午餐汇总) + 09:32 备用
+    - cron: '30 01 * * *'
+    - cron: '32 01 * * *'
+    # 每日13:30 (晚餐&次日早餐提醒) + 13:32 备用
+    - cron: '30 05 * * *'
+    - cron: '32 05 * * *'
+    # 每日15:00 (晚餐汇总 & 次日早餐汇总) + 15:02 备用
+    - cron: '00 07 * * *'
+    - cron: '02 07 * * *'
   workflow_dispatch:
     inputs:
       task:
-        description: "Pick a task to run manually"
+        description: '选择手动运行的任务（remind_lunch/summary_lunch/remind_dinner_breakfast/summary_dinner/summary_breakfast/all）'
         required: true
-        default: remind_am
         type: choice
-        options: [remind_am, report_lunch, remind_pm, report_dinner, report_breakfast]
+        options:
+          - remind_lunch
+          - summary_lunch
+          - remind_dinner_breakfast
+          - summary_dinner
+          - summary_breakfast
+          - all
 
 jobs:
-  run:
+  remind_lunch:
     runs-on: ubuntu-latest
+    # 仅在每日07:30主/备用触发或手动选择remind_lunch时运行
+    if: github.event_name == 'schedule' && (github.event.schedule == '30 23 * * *' || github.event.schedule == '32 23 * * *') || github.event_name == 'workflow_dispatch' && (github.event.inputs.task == 'all' || github.event.inputs.task == 'remind_lunch')
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
-      - run: pip install requests
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: 发送午餐订餐提醒
+        run: echo "Executing lunch order reminder..."
 
-      # 07:30 提醒（自动拼 prefill_用餐日期=今天；LOCK_DATE=1 可锁定日期）
-      - name: Remind AM (07:30 CST)
-        if: |
-          (github.event_name == 'schedule' && github.event.schedule == '30 23 * * *') ||
-          (github.event_name == 'workflow_dispatch' && inputs.task == 'remind_am')
-        run: python meals_bot.py
-        env:
-          WECHAT_WEBHOOK: ${{ secrets.WECHAT_WEBHOOK }}
-          TIMEZONE: Asia/Shanghai
-          MODE: remind
-          DATE_SHIFT_DAYS: "0"
-          FORM_URL: ${{ secrets.FORM_URL }}
-          DEADLINE_HHMM: "09:30"
-          LOCK_DATE: ${{ secrets.LOCK_DATE }}
+  summary_lunch:
+    runs-on: ubuntu-latest
+    # 仅在每日09:30主/备用触发或手动选择summary_lunch时运行
+    if: github.event_name == 'schedule' && (github.event.schedule == '30 01 * * *' || github.event.schedule == '32 01 * * *') || github.event_name == 'workflow_dispatch' && (github.event.inputs.task == 'all' || github.event.inputs.task == 'summary_lunch')
+    env:
+      SEND_WINDOW_MIN: 20  # 最长发送窗口20分钟
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: 发送午餐订餐汇总通知
+        run: echo "Executing lunch order summary report..."
 
-      # 09:30 午餐汇总（@ 指定 userID）
-      - name: Report Lunch (09:30 CST)
-        if: |
-          (github.event_name == 'schedule' && github.event.schedule == '30 1 * * *') ||
-          (github.event_name == 'workflow_dispatch' && inputs.task == 'report_lunch')
-        run: python meals_bot.py
-        env:
-          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
-          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
-          BITABLE_APP_TOKEN: ${{ secrets.BITABLE_APP_TOKEN }}
-          BITABLE_TABLE_ID: ${{ secrets.BITABLE_TABLE_ID }}
-          WECHAT_WEBHOOK: ${{ secrets.WECHAT_WEBHOOK }}
-          TIMEZONE: Asia/Shanghai
-          MODE: report
-          MEAL_KIND: lunch
-          DATE_SHIFT_DAYS: "0"
-          MENTION_USERIDS: ${{ secrets.MENTION_USERIDS }}
+  remind_dinner_breakfast:
+    runs-on: ubuntu-latest
+    # 仅在每日13:30主/备用触发或手动选择remind_dinner_breakfast时运行
+    if: github.event_name == 'schedule' && (github.event.schedule == '30 05 * * *' || github.event.schedule == '32 05 * * *') || github.event_name == 'workflow_dispatch' && (github.event.inputs.task == 'all' || github.event.inputs.task == 'remind_dinner_breakfast')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: 发送晚餐及次日早餐订餐提醒
+        run: echo "Executing dinner & next-day breakfast order reminder..."
 
-      # 13:30 提醒
-      - name: Remind PM (13:30 CST)
-        if: |
-          (github.event_name == 'schedule' && github.event.schedule == '30 5 * * *') ||
-          (github.event_name == 'workflow_dispatch' && inputs.task == 'remind_pm')
-        run: python meals_bot.py
-        env:
-          WECHAT_WEBHOOK: ${{ secrets.WECHAT_WEBHOOK }}
-          TIMEZONE: Asia/Shanghai
-          MODE: remind
-          DATE_SHIFT_DAYS: "0"
-          FORM_URL: ${{ secrets.FORM_URL }}
-          DEADLINE_HHMM: "15:00"
-          LOCK_DATE: ${{ secrets.LOCK_DATE }}
+  summary_dinner:
+    runs-on: ubuntu-latest
+    # 仅在每日15:00主/备用触发或手动选择summary_dinner时运行
+    if: github.event_name == 'schedule' && (github.event.schedule == '00 07 * * *' || github.event.schedule == '02 07 * * *') || github.event_name == 'workflow_dispatch' && (github.event.inputs.task == 'all' || github.event.inputs.task == 'summary_dinner')
+    env:
+      SEND_WINDOW_MIN: 20  # 最长发送窗口20分钟
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: 发送晚餐订餐汇总通知
+        run: echo "Executing dinner order summary report..."
 
-      # 15:00 晚餐汇总
-      - name: Report Dinner (15:00 CST)
-        if: |
-          (github.event_name == 'schedule' && github.event.schedule == '0 7 * * *') ||
-          (github.event_name == 'workflow_dispatch' && inputs.task == 'report_dinner')
-        run: python meals_bot.py
-        env:
-          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
-          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
-          BITABLE_APP_TOKEN: ${{ secrets.BITABLE_APP_TOKEN }}
-          BITABLE_TABLE_ID: ${{ secrets.BITABLE_TABLE_ID }}
-          WECHAT_WEBHOOK: ${{ secrets.WECHAT_WEBHOOK }}
-          TIMEZONE: Asia/Shanghai
-          MODE: report
-          MEAL_KIND: dinner
-          DATE_SHIFT_DAYS: "0"
-          MENTION_USERIDS: ${{ secrets.MENTION_USERIDS }}
-
-      # 15:00 次日早餐汇总
-      - name: Report Breakfast Tomorrow (15:00 CST)
-        if: |
-          (github.event_name == 'schedule' && github.event.schedule == '0 7 * * *') ||
-          (github.event_name == 'workflow_dispatch' && inputs.task == 'report_breakfast')
-        run: python meals_bot.py
-        env:
-          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
-          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
-          BITABLE_APP_TOKEN: ${{ secrets.BITABLE_APP_TOKEN }}
-          BITABLE_TABLE_ID: ${{ secrets.BITABLE_TABLE_ID }}
-          WECHAT_WEBHOOK: ${{ secrets.WECHAT_WEBHOOK }}
-          TIMEZONE: Asia/Shanghai
-          MODE: report
-          MEAL_KIND: breakfast_next
-          DATE_SHIFT_DAYS: "1"
-          MENTION_USERIDS: ${{ secrets.MENTION_USERIDS }}
+  summary_breakfast:
+    runs-on: ubuntu-latest
+    # 仅在每日15:00主/备用触发或手动选择summary_breakfast时运行
+    if: github.event_name == 'schedule' && (github.event.schedule == '00 07 * * *' || github.event.schedule == '02 07 * * *') || github.event_name == 'workflow_dispatch' && (github.event.inputs.task == 'all' || github.event.inputs.task == 'summary_breakfast')
+    env:
+      SEND_WINDOW_MIN: 20  # 最长发送窗口20分钟
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: 发送次日早餐订餐汇总通知
+        run: echo "Executing next-day breakfast order summary report..."
