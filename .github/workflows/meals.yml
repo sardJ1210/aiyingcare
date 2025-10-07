@@ -1,98 +1,212 @@
-name: meals
+name: meals-bot-scheduling
+
 on:
   schedule:
-    - cron: '30 23 * * *'  # 07:30 BJT (23:30 UTC previous day)
-    - cron: '32 23 * * *'  # 07:32 BJT
-    - cron: '30 1 * * *'   # 09:30 BJT
-    - cron: '32 1 * * *'   # 09:32 BJT
-    - cron: '30 5 * * *'   # 13:30 BJT
-    - cron: '32 5 * * *'   # 13:32 BJT
-    - cron: '0 7 * * *'    # 15:00 BJT
-    - cron: '2 7 * * *'    # 15:02 BJT
+    # 北京时间 (Asia/Shanghai) 07:30 主触发 (UTC 23:30)
+    - cron: '30 23 * * *'
+    # 北京时间 07:32 备用触发 (UTC 23:32)
+    - cron: '32 23 * * *'
+    # 北京时间 09:30 主触发 (UTC 01:30)
+    - cron: '30 1 * * *'
+    # 北京时间 09:32 备用触发 (UTC 01:32)
+    - cron: '32 1 * * *'
+    # 北京时间 13:30 主触发 (UTC 05:30)
+    - cron: '30 5 * * *'
+    # 北京时间 13:32 备用触发 (UTC 05:32)
+    - cron: '32 5 * * *'
+    # 北京时间 15:00 主触发 (UTC 07:00)
+    - cron: '0 7 * * *'
+    # 北京时间 15:02 备用触发 (UTC 07:02)
+    - cron: '2 7 * * *'
   workflow_dispatch:
     inputs:
       task:
-        description: 'Task to run (optional): lunch_reminder, lunch_report, dinner_reminder, dinner_report, breakfast_report'
-        required: false
-        default: ''
+        description: '任务类型 (remind_lunch, summary_lunch, remind_dinner_breakfast, summary_dinner, summary_breakfast)'
+        required: true
+        default: 'remind_lunch'
+
 jobs:
-  lunch_reminder:
-    if: >
-      (github.event_name == 'workflow_dispatch' && (github.event.inputs.task == 'lunch_reminder' || github.event.inputs.task == '')) ||
-      (github.event_name == 'schedule' && (contains(github.event.schedule, '30 23 * * *') || contains(github.event.schedule, '32 23 * * *')))
+  remind_lunch:
+    name: Remind Lunch
     runs-on: ubuntu-latest
-    env:
-      MODE: remind
-      MEAL_KIND: lunch
-      DATE_SHIFT_DAYS: 0
+    timeout-minutes: 20
     steps:
-      - name: Log task info
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Setup Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: 3.x
+      - id: check_time
+        name: Check schedule or task (Remind Lunch)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TASK: ${{ github.event.inputs.task }}
         run: |
-          echo "Task: Lunch Order Reminder"
-          echo "MODE=$MODE"
-          echo "MEAL_KIND=$MEAL_KIND"
-          echo "DATE_SHIFT_DAYS=$DATE_SHIFT_DAYS"
-  lunch_report:
-    if: >
-      (github.event_name == 'workflow_dispatch' && (github.event.inputs.task == 'lunch_report' || github.event.inputs.task == '')) ||
-      (github.event_name == 'schedule' && (contains(github.event.schedule, '30 1 * * *') || contains(github.event.schedule, '32 1 * * *')))
+          TIME=$(TZ="Asia/Shanghai" date +'%H:%M')
+          echo "Event: $EVENT_NAME, Time: $TIME, Input Task: $INPUT_TASK"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              if [ "$INPUT_TASK" != "remind_lunch" ]; then
+                  echo "skip=true" >> $GITHUB_OUTPUT
+              else
+                  echo "skip=false" >> $GITHUB_OUTPUT
+              fi
+          else
+              if [ "$TIME" = "07:30" ] || [ "$TIME" = "07:32" ]; then
+                  echo "skip=false" >> $GITHUB_OUTPUT
+              else
+                  echo "skip=true" >> $GITHUB_OUTPUT
+              fi
+          fi
+      - name: Run Remind Lunch
+        if: steps.check_time.outputs.skip == 'false'
+        run: |
+          python meals_bot.py remind_lunch
+
+  summary_lunch:
+    name: Summary Lunch
     runs-on: ubuntu-latest
-    env:
-      MODE: report
-      MEAL_KIND: lunch
-      DATE_SHIFT_DAYS: 0
+    timeout-minutes: 20
     steps:
-      - name: Log task info
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Setup Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: 3.x
+      - id: check_time
+        name: Check schedule or task (Summary Lunch)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TASK: ${{ github.event.inputs.task }}
         run: |
-          echo "Task: Lunch Summary"
-          echo "MODE=$MODE"
-          echo "MEAL_KIND=$MEAL_KIND"
-          echo "DATE_SHIFT_DAYS=$DATE_SHIFT_DAYS"
-  dinner_reminder:
-    if: >
-      (github.event_name == 'workflow_dispatch' && (github.event.inputs.task == 'dinner_reminder' || github.event.inputs.task == '')) ||
-      (github.event_name == 'schedule' && (contains(github.event.schedule, '30 5 * * *') || contains(github.event.schedule, '32 5 * * *')))
+          TIME=$(TZ="Asia/Shanghai" date +'%H:%M')
+          echo "Event: $EVENT_NAME, Time: $TIME, Input Task: $INPUT_TASK"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              if [ "$INPUT_TASK" != "summary_lunch" ]; then
+                  echo "skip=true" >> $GITHUB_OUTPUT
+              else
+                  echo "skip=false" >> $GITHUB_OUTPUT
+              fi
+          else
+              if [ "$TIME" = "09:30" ] || [ "$TIME" = "09:32" ]; then
+                  echo "skip=false" >> $GITHUB_OUTPUT
+              else
+                  echo "skip=true" >> $GITHUB_OUTPUT
+              fi
+          fi
+      - name: Run Summary Lunch
+        if: steps.check_time.outputs.skip == 'false'
+        run: |
+          python meals_bot.py summary_lunch
+
+  remind_dinner_breakfast:
+    name: Remind Dinner/Breakfast
     runs-on: ubuntu-latest
-    env:
-      MODE: remind
-      MEAL_KIND: dinner,breakfast_next
-      DATE_SHIFT_DAYS: 0
+    timeout-minutes: 20
     steps:
-      - name: Log task info
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Setup Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: 3.x
+      - id: check_time
+        name: Check schedule or task (Remind Dinner/Breakfast)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TASK: ${{ github.event.inputs.task }}
         run: |
-          echo "Task: Dinner & Next Day Breakfast Order Reminder"
-          echo "MODE=$MODE"
-          echo "MEAL_KIND=$MEAL_KIND"
-          echo "DATE_SHIFT_DAYS=$DATE_SHIFT_DAYS"
-  dinner_report:
-    if: >
-      (github.event_name == 'workflow_dispatch' && (github.event.inputs.task == 'dinner_report' || github.event.inputs.task == '')) ||
-      (github.event_name == 'schedule' && (contains(github.event.schedule, '0 7 * * *') || contains(github.event.schedule, '2 7 * * *')))
+          TIME=$(TZ="Asia/Shanghai" date +'%H:%M')
+          echo "Event: $EVENT_NAME, Time: $TIME, Input Task: $INPUT_TASK"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              if [ "$INPUT_TASK" != "remind_dinner_breakfast" ]; then
+                  echo "skip=true" >> $GITHUB_OUTPUT
+              else
+                  echo "skip=false" >> $GITHUB_OUTPUT
+              fi
+          else
+              if [ "$TIME" = "13:30" ] || [ "$TIME" = "13:32" ]; then
+                  echo "skip=false" >> $GITHUB_OUTPUT
+              else
+                  echo "skip=true" >> $GITHUB_OUTPUT
+              fi
+          fi
+      - name: Run Remind Dinner/Breakfast
+        if: steps.check_time.outputs.skip == 'false'
+        run: |
+          python meals_bot.py remind_dinner_breakfast
+
+  summary_dinner:
+    name: Summary Dinner
     runs-on: ubuntu-latest
-    env:
-      MODE: report
-      MEAL_KIND: dinner
-      DATE_SHIFT_DAYS: 0
+    timeout-minutes: 20
     steps:
-      - name: Log task info
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Setup Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: 3.x
+      - id: check_time
+        name: Check schedule or task (Summary Dinner)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TASK: ${{ github.event.inputs.task }}
         run: |
-          echo "Task: Dinner Summary"
-          echo "MODE=$MODE"
-          echo "MEAL_KIND=$MEAL_KIND"
-          echo "DATE_SHIFT_DAYS=$DATE_SHIFT_DAYS"
-  breakfast_report:
-    if: >
-      (github.event_name == 'workflow_dispatch' && (github.event.inputs.task == 'breakfast_report' || github.event.inputs.task == '')) ||
-      (github.event_name == 'schedule' && (contains(github.event.schedule, '0 7 * * *') || contains(github.event.schedule, '2 7 * * *')))
+          TIME=$(TZ="Asia/Shanghai" date +'%H:%M')
+          echo "Event: $EVENT_NAME, Time: $TIME, Input Task: $INPUT_TASK"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              if [ "$INPUT_TASK" != "summary_dinner" ]; then
+                  echo "skip=true" >> $GITHUB_OUTPUT
+              else
+                  echo "skip=false" >> $GITHUB_OUTPUT
+              fi
+          else
+              if [ "$TIME" = "15:00" ] || [ "$TIME" = "15:02" ]; then
+                  echo "skip=false" >> $GITHUB_OUTPUT
+              else
+                  echo "skip=true" >> $GITHUB_OUTPUT
+              fi
+          fi
+      - name: Run Summary Dinner
+        if: steps.check_time.outputs.skip == 'false'
+        run: |
+          python meals_bot.py summary_dinner
+
+  summary_breakfast:
+    name: Summary Breakfast
     runs-on: ubuntu-latest
-    env:
-      MODE: report
-      MEAL_KIND: breakfast_next
-      DATE_SHIFT_DAYS: 0
+    timeout-minutes: 20
     steps:
-      - name: Log task info
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Setup Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: 3.x
+      - id: check_time
+        name: Check schedule or task (Summary Breakfast)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TASK: ${{ github.event.inputs.task }}
         run: |
-          echo "Task: Next Day Breakfast Summary"
-          echo "MODE=$MODE"
-          echo "MEAL_KIND=$MEAL_KIND"
-          echo "DATE_SHIFT_DAYS=$DATE_SHIFT_DAYS"
+          TIME=$(TZ="Asia/Shanghai" date +'%H:%M')
+          echo "Event: $EVENT_NAME, Time: $TIME, Input Task: $INPUT_TASK"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              if [ "$INPUT_TASK" != "summary_breakfast" ]; then
+                  echo "skip=true" >> $GITHUB_OUTPUT
+              else
+                  echo "skip=false" >> $GITHUB_OUTPUT
+              fi
+          else
+              if [ "$TIME" = "15:00" ] || [ "$TIME" = "15:02" ]; then
+                  echo "skip=false" >> $GITHUB_OUTPUT
+              else
+                  echo "skip=true" >> $GITHUB_OUTPUT
+              fi
+          fi
+      - name: Run Summary Breakfast
+        if: steps.check_time.outputs.skip == 'false'
+        run: |
+          python meals_bot.py summary_breakfast
